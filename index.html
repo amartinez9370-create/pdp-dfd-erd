@@ -39,7 +39,7 @@
   <a class="btn" id="all" href="#" target="_blank" rel="noopener">All pages (viewer)</a>
 </header>
 <main><div id="msg">Loading diagrams&hellip;</div><div id="stage"></div></main>
-<footer>View only. Use the arrow keys or the list to change diagram. Scroll or pinch to zoom, drag to pan.</footer>
+<footer>View only. Use the arrow keys or the list to change diagram. Mouse wheel to zoom, drag to pan.</footer>
 
 <script>
 (function(){
@@ -54,6 +54,31 @@ function pretty(n){return n.replace(/\s+-\s+/,' · ').replace(/Data Flow Diagram
 function setMsg(t){var m=$('#msg');if(t){m.textContent=t;m.style.display='flex'}else m.style.display='none'}
 function loadScript(src){return new Promise(function(ok,no){var s=document.createElement('script');s.src=src;s.onload=ok;s.onerror=function(){no(new Error('viewer script failed'))};document.head.appendChild(s)})}
 
+
+// Wheel zoom (centred on the pointer) and left-button drag panning.
+function enhance(v){
+  var g=v.graph,c=g.container;
+  g.setPanning(true);
+  g.panningHandler.useLeftButtonForPanning=true;
+  g.panningHandler.ignoreCell=true;
+  g.panningHandler.usePopupTrigger=false;
+  g.setTooltips(false);
+  c.style.cursor='grab';
+  c.addEventListener('mousedown',function(){c.style.cursor='grabbing'});
+  window.addEventListener('mouseup',function(){c.style.cursor='grab'});
+  c.addEventListener('wheel',function(ev){
+    ev.preventDefault();
+    var view=g.view,s=view.scale,t=view.translate;
+    var f=Math.exp(-Math.max(-200,Math.min(200,ev.deltaY))*0.0015);
+    var ns=Math.max(0.1,Math.min(6,s*f));
+    if(ns===s)return;
+    var r=c.getBoundingClientRect(),mx=ev.clientX-r.left,my=ev.clientY-r.top;
+    var gx=(c.scrollLeft+mx)/s-t.x,gy=(c.scrollTop+my)/s-t.y;
+    view.scaleAndTranslate(ns,t.x,t.y);
+    c.scrollLeft=(gx+t.x)*ns-mx;c.scrollTop=(gy+t.y)*ns-my;
+  },{passive:false});
+}
+
 function render(i){
   cur=Math.max(0,Math.min(pages.length-1,i));
   $('#pick').value=String(cur);
@@ -67,7 +92,7 @@ function render(i){
     xml:'<mxfile><diagram name="p" id="p">'+pages[cur].model+'</diagram></mxfile>'};
   d.setAttribute('data-mxgraph',JSON.stringify(cfg));
   st.appendChild(d);
-  window.GraphViewer.processElements();
+  window.GraphViewer.createViewerForElement(d,function(v){enhance(v)});
   st.scrollTop=0;st.scrollLeft=0;
 }
 
