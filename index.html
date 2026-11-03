@@ -41,7 +41,7 @@
   <a class="btn" id="all" href="#" target="_blank" rel="noopener">All pages (viewer)</a>
 </header>
 <main><div id="msg">Loading diagrams&hellip;</div><div id="stage"></div></main>
-<footer>View only. Use the arrow keys or the list to change diagram. Mouse wheel to zoom at the pointer, drag to pan. · page v4</footer>
+<footer>View only. Use the arrow keys or the list to change diagram. Mouse wheel to zoom at the pointer, drag to pan. · page v5</footer>
 
 <script>
 (function(){
@@ -60,18 +60,27 @@ function loadScript(src){return new Promise(function(ok,no){var s=document.creat
 // Own pan and zoom. Mouse down is captured before draw.io sees it, so dragging
 // never selects shapes, even when the drag starts on a shape.
 var userMoved=false;
-function setView(g,s,tx,ty){g.view.scaleAndTranslate(s,tx,ty)}
-function zoomAt(g,mx,my,f){
-  var view=g.view,s=view.scale,t=view.translate;
-  var ns=Math.max(0.05,Math.min(8,s*f));
-  if(ns===s)return;
-  var gx=mx/s-t.x,gy=my/s-t.y;            // model point under the pointer
-  setView(g,ns,mx/ns-gx,my/ns-gy);        // keep that point under the pointer
-  userMoved=true;
+// Pan and zoom are a CSS transform on the drawing, so they never depend on how big
+// draw.io thinks the diagram is. That leaves unlimited empty space around the figure.
+function svgOf(v){return v.graph.view.getDrawPane().ownerSVGElement}
+function apply(v){
+  var svg=svgOf(v);
+  svg.style.overflow='visible';
+  svg.style.transformOrigin='0 0';
+  svg.style.transform='translate('+v.__px+'px,'+v.__py+'px) scale('+v.__k+')';
 }
+function zoomAt(v,mx,my,f){
+  var nk=Math.max(0.03,Math.min(12,v.__k*f));
+  if(nk===v.__k)return;
+  var r=nk/v.__k;
+  v.__px=mx-(mx-v.__px)*r;v.__py=my-(my-v.__py)*r;v.__k=nk;
+  apply(v);userMoved=true;
+}
+function panBy(v,dx,dy){v.__px+=dx;v.__py+=dy;apply(v);userMoved=true}
 function enhance(v){
   var g=v.graph,c=g.container;
   userMoved=false;
+  v.__k=1;v.__px=0;v.__py=0;
   c.style.overflow='hidden';
   c.style.cursor='grab';
   c.style.touchAction='none';
@@ -84,10 +93,8 @@ function enhance(v){
     var p=pos(ev);drag={x:p.x,y:p.y};c.style.cursor='grabbing';
   },true);
   window.addEventListener('mousemove',function(ev){
-    if(!drag)return;
-    var p=pos(ev),t=g.view.translate,s=g.view.scale;
-    setView(g,s,t.x+(p.x-drag.x)/s,t.y+(p.y-drag.y)/s);
-    drag={x:p.x,y:p.y};userMoved=true;
+    if(!drag||curV!==v)return;
+    var p=pos(ev);panBy(v,p.x-drag.x,p.y-drag.y);drag={x:p.x,y:p.y};
   });
   window.addEventListener('mouseup',function(){drag=null;c.style.cursor='grab'});
   c.addEventListener('click',function(ev){ev.stopPropagation()},true);
@@ -95,7 +102,7 @@ function enhance(v){
   c.addEventListener('wheel',function(ev){
     ev.preventDefault();ev.stopPropagation();
     var p=pos(ev);
-    zoomAt(g,p.x,p.y,Math.exp(-Math.max(-200,Math.min(200,ev.deltaY))*0.0015));
+    zoomAt(v,p.x,p.y,Math.exp(-Math.max(-200,Math.min(200,ev.deltaY))*0.0015));
   },{passive:false,capture:true});
   // Touch: one finger pans, two fingers pinch-zoom around their midpoint.
   var tp=null;
@@ -108,10 +115,10 @@ function enhance(v){
   c.addEventListener('touchmove',function(ev){
     ev.preventDefault();ev.stopPropagation();
     if(!tp)return;
-    var n=tinfo(ev),t=g.view.translate,s=g.view.scale;
-    setView(g,s,t.x+(n.x-tp.x)/s,t.y+(n.y-tp.y)/s);
-    if(n.d&&tp.d)zoomAt(g,n.x,n.y,n.d/tp.d);
-    tp=n;userMoved=true;
+    var n=tinfo(ev);
+    panBy(v,n.x-tp.x,n.y-tp.y);
+    if(n.d&&tp.d)zoomAt(v,n.x,n.y,n.d/tp.d);
+    tp=n;
   },{passive:false,capture:true});
   c.addEventListener('touchend',function(ev){ev.preventDefault();tp=ev.touches.length?tinfo(ev):null},{passive:false,capture:true});
 }
@@ -129,15 +136,17 @@ function stripToolbars(){
 function fitView(force){
   if(!curV)return;
   if(userMoved&&!force)return;
-  var g=curV.graph,c=g.container,view=g.view;
+  var v=curV,g=v.graph,c=g.container;
   var cw=c.clientWidth,ch=c.clientHeight;
   if(cw<50||ch<50)return;
-  var s=view.scale,t=view.translate,b=g.getGraphBounds();
-  if(!b||!b.width||!b.height)return;
-  var bw=b.width/s,bh=b.height/s,bx=b.x/s-t.x,by=b.y/s-t.y,m=16;
-  var ns=Math.min((cw-2*m)/bw,(ch-2*m)/bh,3);
-  var tx=-bx+(cw/ns-bw)/2,ty=-by+(ch/ns-bh)/2;
-  view.scaleAndTranslate(ns,tx,ty);
+  var bb=g.getGraphBounds();
+  if(!bb||!bb.width||!bb.height)return;
+  var m=16;
+  var k=Math.min((cw-2*m)/bb.width,(ch-2*m)/bb.height,3);
+  v.__k=k;
+  v.__px=(cw-bb.width*k)/2-bb.x*k;
+  v.__py=(ch-bb.height*k)/2-bb.y*k;
+  apply(v);
   c.scrollLeft=0;c.scrollTop=0;
   if(force)userMoved=false;
 }
