@@ -47,9 +47,9 @@
 var FILE='pdp-dfd-erd.drawio';
 var VIEWER=window.PDP_VIEWER_SRC||'https://viewer.diagrams.net/js/viewer-static.min.js';
 var $=function(s){return document.querySelector(s)};
-var pages=[],cur=0,viewerReady=false;
-// Reference and deck-only pages are left out of the menu.
-function skip(n){return /reference only|untrimmed|for deck/i.test(n)}
+var pages=[],cur=0,curV=null;
+// Only the duplicate landscape copy made for the slide deck is left out of the menu.
+function skip(n){return /for deck/i.test(n)}
 function pretty(n){return n.replace(/\s+-\s+/,' · ').replace(/Data Flow Diagram \(Level 1\)/,'DFD Level 1').replace(/\s+/g,' ')}
 function setMsg(t){var m=$('#msg');if(t){m.textContent=t;m.style.display='flex'}else m.style.display='none'}
 function loadScript(src){return new Promise(function(ok,no){var s=document.createElement('script');s.src=src;s.onload=ok;s.onerror=function(){no(new Error('viewer script failed'))};document.head.appendChild(s)})}
@@ -79,6 +79,23 @@ function enhance(v){
   },{passive:false});
 }
 
+// Fit the whole diagram inside the visible area, centred, with a small margin.
+function fitView(){
+  if(!curV)return;
+  var g=curV.graph,c=g.container,view=g.view;
+  var cw=c.clientWidth,ch=c.clientHeight;
+  if(cw<50||ch<50)return;
+  var s=view.scale,t=view.translate,b=g.getGraphBounds();
+  if(!b||!b.width||!b.height)return;
+  var bw=b.width/s,bh=b.height/s,bx=b.x/s-t.x,by=b.y/s-t.y,m=16;
+  var ns=Math.min((cw-2*m)/bw,(ch-2*m)/bh,3);
+  var tx=-bx+(cw/ns-bw)/2,ty=-by+(ch/ns-bh)/2;
+  view.scaleAndTranslate(ns,tx,ty);
+  c.scrollLeft=0;c.scrollTop=0;
+}
+window.addEventListener('resize',function(){fitView()});
+window.__pdpViewer=function(){return curV};
+
 function render(i){
   cur=Math.max(0,Math.min(pages.length-1,i));
   $('#pick').value=String(cur);
@@ -88,11 +105,11 @@ function render(i){
   var st=$('#stage');st.innerHTML='';
   var d=document.createElement('div');d.className='mxgraph';
   d.style.cssText='display:block;position:absolute;left:0;top:0;width:100%;height:100%';
-  var cfg={highlight:'#0000ff',nav:true,resize:false,toolbar:'zoom layers',lightbox:false,'toolbar-position':'top','toolbar-nohide':true,'auto-fit':true,'allow-zoom-in':false,center:true,border:10,
+  var cfg={highlight:'#0000ff',nav:true,resize:false,lightbox:false,border:0,
     xml:'<mxfile><diagram name="p" id="p">'+pages[cur].model+'</diagram></mxfile>'};
   d.setAttribute('data-mxgraph',JSON.stringify(cfg));
   st.appendChild(d);
-  window.GraphViewer.createViewerForElement(d,function(v){enhance(v)});
+  window.GraphViewer.createViewerForElement(d,function(v){curV=v;enhance(v);fitView();setTimeout(fitView,60);setTimeout(fitView,400)});
   st.scrollTop=0;st.scrollLeft=0;
 }
 
@@ -110,7 +127,7 @@ function init(xmlText){
   sel.addEventListener('change',function(){render(+sel.value)});
   $('#prev').onclick=function(){render(cur-1)};
   $('#next').onclick=function(){render(cur+1)};
-  $('#fit').onclick=function(){render(cur)};
+  $('#fit').onclick=function(){fitView()};
   $('#full').onclick=function(){var e=document.documentElement;if(document.fullscreenElement)document.exitFullscreen();else if(e.requestFullscreen)e.requestFullscreen()};
   document.addEventListener('keydown',function(ev){
     if(ev.target&&/SELECT|INPUT/.test(ev.target.tagName))return;
