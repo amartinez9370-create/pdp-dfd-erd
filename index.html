@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PDP Diagrams (view only)</title>
+<style>
+  :root{--bg:#f7f5f0;--ink:#16302f;--line:#cfd8d6;--teal:#1f5f5b;--mist:#e5eeec}
+  @media (prefers-color-scheme:dark){:root{--bg:#0f1c1b;--ink:#e6efed;--line:#2c4442;--teal:#6fc2bb;--mist:#183230}}
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{background:var(--bg);color:var(--ink);font:15px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;display:flex;flex-direction:column}
+  header{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:8px 12px;border-bottom:1px solid var(--line);background:var(--bg)}
+  header h1{font-size:15px;margin:0 8px 0 0;font-weight:700;letter-spacing:.01em}
+  button,select,a.btn{font:inherit;color:var(--ink);background:var(--mist);border:1px solid var(--line);border-radius:8px;padding:6px 12px;cursor:pointer;text-decoration:none}
+  button:hover,select:hover,a.btn:hover{border-color:var(--teal)}
+  button:disabled{opacity:.4;cursor:default}
+  select{flex:1 1 260px;min-width:0;max-width:640px}
+  .sp{flex:1}
+  #count{font-size:13px;opacity:.75;white-space:nowrap}
+  main{flex:1;min-height:0;position:relative;overflow:hidden}
+  #stage{position:absolute;inset:0;overflow:auto;background:#fff}
+  #stage .geDiagramContainer{margin:0 auto}
+  #msg{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#444;background:#fff;z-index:2}
+  footer{font-size:12px;padding:5px 12px;border-top:1px solid var(--line);opacity:.8}
+  @media (max-width:640px){header h1{width:100%}}
+</style>
+</head>
+<body>
+<header>
+  <h1>Paciente Dental POD · DFDs and ERD</h1>
+  <button id="prev" type="button" aria-label="Previous diagram">&larr; Prev</button>
+  <select id="pick" aria-label="Choose a diagram"></select>
+  <button id="next" type="button" aria-label="Next diagram">Next &rarr;</button>
+  <span id="count"></span>
+  <span class="sp"></span>
+  <button id="fit" type="button">Fit</button>
+  <button id="full" type="button">Full screen</button>
+  <a class="btn" id="all" href="#" target="_blank" rel="noopener">All pages (viewer)</a>
+</header>
+<main><div id="msg">Loading diagrams&hellip;</div><div id="stage"></div></main>
+<footer>View only. Use the arrow keys or the list to change diagram. Scroll or pinch to zoom, drag to pan.</footer>
+
+<script>
+(function(){
+"use strict";
+var FILE='pdp-dfd-erd.drawio';
+var VIEWER=window.PDP_VIEWER_SRC||'https://viewer.diagrams.net/js/viewer-static.min.js';
+var $=function(s){return document.querySelector(s)};
+var pages=[],cur=0,viewerReady=false;
+// Reference and deck-only pages are left out of the menu.
+function skip(n){return /reference only|untrimmed|for deck/i.test(n)}
+function pretty(n){return n.replace(/\s+-\s+/,' · ').replace(/Data Flow Diagram \(Level 1\)/,'DFD Level 1').replace(/\s+/g,' ')}
+function setMsg(t){var m=$('#msg');if(t){m.textContent=t;m.style.display='flex'}else m.style.display='none'}
+function loadScript(src){return new Promise(function(ok,no){var s=document.createElement('script');s.src=src;s.onload=ok;s.onerror=function(){no(new Error('viewer script failed'))};document.head.appendChild(s)})}
+
+function render(i){
+  cur=Math.max(0,Math.min(pages.length-1,i));
+  $('#pick').value=String(cur);
+  $('#prev').disabled=cur===0;$('#next').disabled=cur===pages.length-1;
+  $('#count').textContent=(cur+1)+' / '+pages.length;
+  try{history.replaceState(null,'','#'+(cur+1))}catch(e){}
+  var st=$('#stage');st.innerHTML='';
+  var d=document.createElement('div');d.className='mxgraph';
+  d.style.cssText='display:block;position:absolute;left:0;top:0;width:100%;height:100%';
+  var cfg={highlight:'#0000ff',nav:true,resize:false,toolbar:'zoom layers',lightbox:false,'toolbar-position':'top','toolbar-nohide':true,'auto-fit':true,'allow-zoom-in':false,center:true,border:10,
+    xml:'<mxfile><diagram name="p" id="p">'+pages[cur].model+'</diagram></mxfile>'};
+  d.setAttribute('data-mxgraph',JSON.stringify(cfg));
+  st.appendChild(d);
+  window.GraphViewer.processElements();
+  st.scrollTop=0;st.scrollLeft=0;
+}
+
+function init(xmlText){
+  var doc=new DOMParser().parseFromString(xmlText,'text/xml');
+  var ser=new XMLSerializer();
+  Array.prototype.forEach.call(doc.getElementsByTagName('diagram'),function(d,idx){
+    var name=d.getAttribute('name')||('Page '+(idx+1));
+    if(skip(name))return;
+    var m=d.getElementsByTagName('mxGraphModel')[0];if(!m)return;
+    pages.push({idx:idx,name:name,model:ser.serializeToString(m)});
+  });
+  var sel=$('#pick');
+  pages.forEach(function(p,k){var o=document.createElement('option');o.value=String(k);o.textContent=pretty(p.name);sel.appendChild(o)});
+  sel.addEventListener('change',function(){render(+sel.value)});
+  $('#prev').onclick=function(){render(cur-1)};
+  $('#next').onclick=function(){render(cur+1)};
+  $('#fit').onclick=function(){render(cur)};
+  $('#full').onclick=function(){var e=document.documentElement;if(document.fullscreenElement)document.exitFullscreen();else if(e.requestFullscreen)e.requestFullscreen()};
+  document.addEventListener('keydown',function(ev){
+    if(ev.target&&/SELECT|INPUT/.test(ev.target.tagName))return;
+    if(ev.key==='ArrowRight'||ev.key==='PageDown')render(cur+1);
+    else if(ev.key==='ArrowLeft'||ev.key==='PageUp')render(cur-1);
+    else if(ev.key==='Home')render(0);else if(ev.key==='End')render(pages.length-1);
+  });
+  // Link to the stock draw.io viewer with every page.
+  var abs=new URL(FILE,location.href).href;
+  $('#all').href='https://viewer.diagrams.net/?lightbox=1&highlight=0000ff&layers=1&nav=1#U'+encodeURIComponent(abs);
+  var start=parseInt((location.hash||'').slice(1),10);
+  setMsg('');
+  render(isNaN(start)?0:start-1);
+}
+
+Promise.all([fetch(FILE).then(function(r){if(!r.ok)throw new Error(FILE+' '+r.status);return r.text()}),loadScript(VIEWER)])
+.then(function(x){init(x[0])})
+.catch(function(e){setMsg('Could not load the diagrams ('+e.message+'). Open the "All pages (viewer)" link or try again.');});
+})();
+</script>
+</body>
+</html>
